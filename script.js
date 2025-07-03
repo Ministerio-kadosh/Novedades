@@ -2,6 +2,8 @@
 window.addEventListener('DOMContentLoaded', function() {
     const form = document.getElementById('asistencia-form');
     const input = document.getElementById('nombre');
+    const telefonoInput = document.getElementById('telefono');
+    const tipoPersonaSelect = document.getElementById('tipo-persona');
     const lista = document.getElementById('lista-asistentes');
 
     // --- SUPABASE CONFIGURACIÓN ---
@@ -19,10 +21,32 @@ window.addEventListener('DOMContentLoaded', function() {
     // Efecto de partículas al cargar
     createParticleEffect();
 
+    // Formatear teléfono automáticamente
+    telefonoInput.addEventListener('input', function(e) {
+        let value = e.target.value.replace(/\D/g, ''); // Solo números
+        if (value.length > 15) value = value.slice(0, 15); // Máximo 15 dígitos
+        
+        // Formatear según la longitud
+        if (value.length >= 7) {
+            if (value.length <= 10) {
+                value = value.replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3');
+            } else {
+                value = value.replace(/(\d{3})(\d{3})(\d{4})(\d{1,5})/, '$1-$2-$3-$4');
+            }
+        }
+        
+        e.target.value = value;
+    });
+
     form.addEventListener('submit', async function(e) {
         e.preventDefault();
         if (isLoading) return;
+        
         const nombre = input.value.trim();
+        const telefono = telefonoInput.value.trim();
+        const tipoPersona = tipoPersonaSelect.value;
+        
+        // Validación del nombre
         if (!nombre || nombre.length < 2) {
             showMessage('Por favor ingresa un nombre válido (mínimo 2 caracteres)', 'error');
             input.focus();
@@ -33,6 +57,27 @@ window.addEventListener('DOMContentLoaded', function() {
             input.focus();
             return;
         }
+        
+        // Validación del teléfono
+        if (!telefono) {
+            showMessage('Por favor ingresa tu teléfono', 'error');
+            telefonoInput.focus();
+            return;
+        }
+        const telefonoLimpio = telefono.replace(/\D/g, '');
+        if (telefonoLimpio.length < 7 || telefonoLimpio.length > 15) {
+            showMessage('Por favor ingresa un teléfono válido (7-15 dígitos)', 'error');
+            telefonoInput.focus();
+            return;
+        }
+        
+        // Validación del tipo de persona
+        if (!tipoPersona) {
+            showMessage('Por favor selecciona si eres miembro o amigo', 'error');
+            tipoPersonaSelect.focus();
+            return;
+        }
+        
         // Verificar duplicados (case insensitive)
         const existe = asistentes.find(a => a.nombre.toLowerCase().trim() === nombre.toLowerCase());
         if (existe) {
@@ -40,17 +85,24 @@ window.addEventListener('DOMContentLoaded', function() {
             input.focus();
             return;
         }
+        
         isLoading = true;
         showLoading(true);
+        
         // Insertar en Supabase
         const { data, error } = await supabase.from('asistentes').insert([{ 
-            nombre: nombre
+            nombre: nombre,
+            telefono: telefonoLimpio,
+            tipo_persona: tipoPersona
         }]);
+        
         if (error) {
             showMessage('Error al registrar: ' + error.message, 'error');
         } else {
             showMessage('¡Registrado!', 'success');
             input.value = '';
+            telefonoInput.value = '';
+            tipoPersonaSelect.value = '';
             await cargarAsistentes();
         }
         isLoading = false;
@@ -108,10 +160,31 @@ window.addEventListener('DOMContentLoaded', function() {
         } else {
             asistentes.forEach(asistente => {
                 const li = document.createElement('li');
+                const tipoIcon = asistente.tipo_persona === 'miembro' ? 'fas fa-church' : 'fas fa-user-friends';
+                const tipoText = asistente.tipo_persona === 'miembro' ? 'Miembro' : 'Amigo';
+                
+                // Formatear teléfono para mostrar
+                let telefonoFormateado = 'N/A';
+                if (asistente.telefono) {
+                    const telefonoLimpio = asistente.telefono.toString().replace(/\D/g, '');
+                    if (telefonoLimpio.length >= 7) {
+                        if (telefonoLimpio.length <= 10) {
+                            telefonoFormateado = telefonoLimpio.replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3');
+                        } else {
+                            telefonoFormateado = telefonoLimpio.replace(/(\d{3})(\d{3})(\d{4})(\d{1,5})/, '$1-$2-$3-$4');
+                        }
+                    } else {
+                        telefonoFormateado = telefonoLimpio;
+                    }
+                }
+                
                 li.innerHTML = `
                     <div class="asistente-item">
-                        <span class="asistente-nombre">${asistente.nombre}</span>
-                        <span class="asistente-id">ID: ${asistente.id}</span>
+                        <div class="asistente-info">
+                            <span class="asistente-nombre">${asistente.nombre}</span>
+                            <span class="asistente-telefono"><i class="fas fa-phone"></i> ${telefonoFormateado}</span>
+                            <span class="asistente-tipo"><i class="${tipoIcon}"></i> ${tipoText}</span>
+                        </div>
                         <button class="delete-btn" onclick="eliminarAsistente('${asistente.id}')" title="Eliminar ${asistente.nombre}">
                             <i class="fas fa-trash"></i>
                         </button>
@@ -365,15 +438,43 @@ style.textContent = `
         width: 100%;
     }
 
-    .asistente-nombre {
-        font-weight: 600;
+    .asistente-info {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
         flex: 1;
     }
 
-    .asistente-id {
-        font-size: 0.8em;
+    .asistente-nombre {
+        font-weight: 600;
+        font-size: 1.1em;
+        color: #00796B;
+    }
+
+    .asistente-telefono {
+        font-size: 0.9em;
         color: #666;
-        margin: 0 10px;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+    }
+
+    .asistente-telefono i {
+        color: #4CAF50;
+        font-size: 0.8em;
+    }
+
+    .asistente-tipo {
+        font-size: 0.8em;
+        color: #FF9800;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        font-weight: 500;
+    }
+
+    .asistente-tipo i {
+        font-size: 0.9em;
     }
 
     .delete-btn {
@@ -448,12 +549,24 @@ style.textContent = `
         
         .asistente-item {
             flex-direction: column;
-            gap: 5px;
+            gap: 8px;
             text-align: center;
         }
         
-        .asistente-id {
-            margin: 0;
+        .asistente-info {
+            gap: 3px;
+        }
+        
+        .asistente-nombre {
+            font-size: 1em;
+        }
+        
+        .asistente-telefono {
+            font-size: 0.8em;
+        }
+        
+        .asistente-tipo {
+            font-size: 0.7em;
         }
     }
 
